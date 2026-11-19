@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Tangram – usage counter</title>
+<style>
+  body{margin:0;background:#f5efe4;color:#2b2a33;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px 16px 48px}
+  main{max-width:760px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px}
+  p.sub{color:#7a7468;margin:0 0 20px;font-size:14px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+  .tile{background:#fffaf2;border:2px solid #e6dccb;border-radius:16px;padding:14px}
+  .tile .v{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}
+  .tile .l{font-size:13px;color:#7a7468}
+  h2{font-size:17px;margin:22px 0 8px}
+  .chart{background:#fffaf2;border:2px solid #e6dccb;border-radius:16px;padding:14px 12px 8px}
+  .bars{display:flex;align-items:flex-end;gap:6px;height:150px}
+  .bar{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .bar i{display:block;width:100%;background:#e85d4a;border-radius:6px 6px 0 0;min-height:2px}
+  .bar b{font-size:11px;font-weight:600;margin-bottom:3px}
+  .bar span{font-size:10px;color:#7a7468;margin-top:4px;white-space:nowrap;overflow:hidden;max-width:100%}
+  .note{font-size:13px;color:#7a7468;margin-top:22px;line-height:1.5}
+  #status{font-size:13px;color:#3b8ea5}
+</style>
+</head>
+<body>
+<main>
+  <h1>Tangram – usage counter</h1>
+  <p class="sub">Anonymous counts only: no names, IDs or locations. Days and weeks are in India time (IST). <span id="status">Loading…</span></p>
+  <div class="tiles">
+    <div class="tile"><div class="v" id="today">–</div><div class="l">Players today</div></div>
+    <div class="tile"><div class="v" id="week">–</div><div class="l">Players this week</div></div>
+    <div class="tile"><div class="v" id="newToday">–</div><div class="l">New phones today</div></div>
+    <div class="tile"><div class="v" id="devices">–</div><div class="l">Phones in total</div></div>
+    <div class="tile"><div class="v" id="installs">–</div><div class="l">Installed as an app (total)</div></div>
+    <div class="tile"><div class="v" id="solved">–</div><div class="l">Puzzles solved (total)</div></div>
+  </div>
+  <h2>Players per day (last 14 days, by date)</h2><div class="chart"><div class="bars" id="daily"></div></div>
+  <h2>New phones per day (last 7 days)</h2><div class="chart"><div class="bars" id="newDaily"></div></div>
+  <h2>Players per week (last 8 weeks)</h2><div class="chart"><div class="bars" id="weekly"></div></div>
+  <p class="note">"Players" counts each phone once per day or once per week. "Phones in total" counts every phone that opened the game at least once (website or app); "Installed as an app" counts phones that opened it from the home-screen icon or the Play Store app. Counts start from the day the counter went live.</p>
+</main>
+<script>
+const API='https://abacus.jasoncameron.dev', NS='tangram-vcs-7lava6iw';
+function istParts(ms){const d=new Date(ms+5.5*3600e3);const day=d.toISOString().slice(0,10);
+  const t=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));const dow=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-dow);
+  const y0=new Date(Date.UTC(t.getUTCFullYear(),0,1));const wk=Math.ceil(((t-y0)/864e5+1)/7);
+  return{day,week:t.getUTCFullYear()+'-W'+String(wk).padStart(2,'0')}}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function get(key){ // read only – does not change the count. Spaced out to respect the service's rate limit.
+  await sleep(380);
+  try{const r=await fetch(`${API}/get/${NS}/${key}`,{cache:'no-store'});if(r.status===404)return 0;const j=await r.json();return j.value||0}catch(e){return null}}
+const fmt=v=>v===null?'?':v.toLocaleString('en-IN');
+function bars(el,items){const max=Math.max(1,...items.map(i=>i.v||0));
+  document.getElementById(el).innerHTML=items.map(i=>`<div class="bar"><b>${fmt(i.v)}</b><i style="height:${((i.v||0)/max*100).toFixed(0)}%"></i><span>${i.l}</span></div>`).join('')}
+(async()=>{
+  const now=Date.now(),{day,week}=istParts(now);
+  const set=(id,v)=>document.getElementById(id).textContent=fmt(v);
+  set('today',await get('users-d-'+day));set('week',await get('users-w-'+week));set('newToday',await get('new-d-'+day));
+  set('devices',await get('devices-total'));set('installs',await get('installs-total'));set('solved',await get('solved-total'));
+  const daily=[];for(let i=13;i>=0;i--){const d=istParts(now-i*864e5).day;daily.push({l:d.slice(8),v:await get('users-d-'+d)});bars('daily',daily)}
+  const nd=[];for(let i=6;i>=0;i--){const d=istParts(now-i*864e5).day;nd.push({l:d.slice(8)+'/'+d.slice(5,7),v:await get('new-d-'+d)});bars('newDaily',nd)}
+  const wk=[];for(let i=7;i>=0;i--){const w=istParts(now-i*7*864e5).week;wk.push({l:w.slice(5),v:await get('users-w-'+w)});bars('weekly',wk)}
+  document.getElementById('status').textContent='Updated '+new Date().toLocaleString('en-IN');
+})();
+</script>
+</body>
+</html>
